@@ -1,138 +1,18 @@
 ### Orb is broken for push-image. image: paramater only accepts strings and does not interpolate variables properly
 ### Continue with use of orb when PR is merged by gcp-gcr-orb maintainers: https://github.com/CircleCI-Public/gcp-gcr-orb/pull/67
-# version: 2.1
-
-# orbs:
-#   gcp-gcr: circleci/gcp-gcr@0.15
-
-# global_context: &global_context
-#   context:
-#   - global_gcr_vars # for google container registry
-
-# workflows:
-#   build_and_push_image:
-#     jobs:
-#       - gcp-gcr/build-and-push-image:
-#           image: ${CIRCLE_PROJECT_REPONAME}
-#           registry-url: us.gcr.io
-#           tag: ${CIRCLE_SHA1:0:7},${CIRCLE_BRANCH},latest
-
 version: 2.1
 
 orbs:
   gcp-gcr: circleci/gcp-gcr@0.15
-  pe-circleci-deploy: droneup/pe-circleci-deploy@1.0
 
 global_context: &global_context
   context:
-    - global_gcr_vars   # for google container registry
-
-jobs:
-  build-and-push:
-    executor: gcp-gcr/default
-    steps:
-      - checkout
-      - gcp-gcr/gcr-auth
-      - gcp-gcr/build-image:
-          image: ${CIRCLE_PROJECT_REPONAME}
-          tag: ${CIRCLE_SHA1:0:7},${CIRCLE_BRANCH},latest
-          no_output_timeout: 20m
-          registry-url: us.gcr.io
-      - run:
-          command: |
-            #!/bin/bash
-
-            IFS="," read -ra DOCKER_TAGS \<<< "$ORB_EVAL_TAG"
-            PROJECT_ID="${!ORB_ENV_PROJECT_ID}"
-            ORB_VAL_IMAGE=$(eval echo "$ORB_VAL_IMAGE")
-
-            for tag_to_eval in "${DOCKER_TAGS[@]}"; do
-                TAG=$(eval echo "$tag_to_eval")
-                docker push "$ORB_VAL_REGISTRY_URL/$PROJECT_ID/$ORB_VAL_IMAGE:$TAG"
-            done
-
-            if [ -n "$ORB_VAL_DIGEST_PATH" ]; then
-                mkdir -p "$(dirname "$ORB_VAL_DIGEST_PATH")"
-                SAMPLE_FIRST=$(eval echo "${DOCKER_TAGS[0]}")
-                docker image inspect --format="{{index .RepoDigests 0}}" "$ORB_VAL_REGISTRY_URL/$PROJECT_ID/$ORB_VAL_IMAGE:$SAMPLE_FIRST" > "$ORB_VAL_DIGEST_PATH"
-            fi
-
-          environment:
-            ORB_ENV_PROJECT_ID: GOOGLE_PROJECT_ID
-            ORB_EVAL_TAG: ${CIRCLE_SHA1:0:7},${CIRCLE_BRANCH},latest
-            ORB_VAL_DIGEST_PATH: /tmp/digest.txt
-            ORB_VAL_IMAGE: ${CIRCLE_PROJECT_REPONAME}
-            ORB_VAL_REGISTRY_URL: us.gcr.io
-          name: Push image to GCR
-      - run:
-          command: |
-            echo "Digest is: $(</tmp/digest.txt)"
-  gke-helm-deploy: &gke-helm-deploy
-    executor: pe-circleci-deploy/default
-    circleci_ip_ranges: true
-    steps:
-      - checkout
-      - run: "curl ifconfig.me"
-      - pe-circleci-deploy/setup:
-          gcloud-service-key: GCP_SVC_ACCOUNT_JSON
-          google-project-id: GKE_PROJECT_NAME
-          google-compute-region: GKE_REGION
-          google-gke-cluster: GKE_CLUSTER
-          doppler-token: ${!TOKEN_NAME}
-      - pe-circleci-deploy/upgrade-helm-chart:
-          add-repo: "https://droneup-helm-charts.storage.googleapis.com/"
-          chart: shared-service
-          release-name: ${CIRCLE_PROJECT_REPONAME}-${GKE_ENVIRONMENT}
-          namespace: "services"
-          values-to-override: image.tag=${CIRCLE_SHA1:0:7},doppler.roToken=${DOPPLER_RO_TOKEN},fullnameOverride=${CIRCLE_PROJECT_REPONAME}-${GKE_ENVIRONMENT}
-          values: values.yml
-          atomic: true
-      - run: "echo $DOPPLER_CONFIG"
-  gke-helm-deploy-sandbox:
-    environment:
-      TOKEN_NAME: DOPPLER_SANDBOX_TOKEN
-    <<: *gke-helm-deploy
-  gke-helm-deploy-dev:
-    environment:
-      TOKEN_NAME: DOPPLER_DEV_TOKEN
-    <<: *gke-helm-deploy
-  gke-helm-deploy-prod:
-    environment:
-      TOKEN_NAME: DOPPLER_PROD_TOKEN
-    <<: *gke-helm-deploy
+  - global_gcr_vars # for google container registry
 
 workflows:
-  build-deploy:
+  build_and_push_image:
     jobs:
-      - build-and-push:
-          context: global_gcr_vars
-      - gke-helm-deploy-sandbox:
-          filters:
-            branches:
-              ignore:
-                - trunk
-          requires:
-            - build-and-push
-      - gke-helm-deploy-dev:
-          filters:
-            branches:
-              only:
-                - trunk
-          requires:
-            - build-and-push
-      - hold-prod:
-          type: approval
-          filters:
-            branches:
-              only:
-                - trunk
-          requires:
-            - build-and-push
-            - gke-helm-deploy-dev
-      - gke-helm-deploy-prod:
-          filters:
-            branches:
-              only:
-                - trunk
-          requires:
-            - hold-prod
+      - gcp-gcr/build-and-push-image:
+          image: ${CIRCLE_PROJECT_REPONAME}
+          registry-url: us.gcr.io
+          tag: ${CIRCLE_SHA1:0:7},${CIRCLE_BRANCH},latest
