@@ -1,18 +1,11 @@
-### Orb is broken for push-image. image: paramater only accepts strings and does not interpolate variables properly
-### Continue with use of orb when PR is merged by gcp-gcr-orb maintainers: https://github.com/CircleCI-Public/gcp-gcr-orb/pull/67
+# CircleCI configuration file
 version: 2.1
 
-orbs:
-  gcp-gcr: circleci/gcp-gcr@0.15
-
-global_context: &global_context
-  context:
-  - global_gcr_vars # for google container registry
-
-workflows:
-  build_and_push_image:
-    jobs:
-      - gcp-gcr/build-and-push-image:
-          image: ${CIRCLE_PROJECT_REPONAME}
-          registry-url: us.gcr.io
-          tag: ${CIRCLE_SHA1:0:7},${CIRCLE_BRANCH},latest
+jobs:
+  build:
+    docker:
+    # Primary container image where all steps run
+     - image: cimg/base:2022.05
+        auth:
+          username: mydockerhub-user
+          password: $DOCKERHUB_PASSWORD  # context / project UI env-var reference
